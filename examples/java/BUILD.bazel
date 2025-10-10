@@ -1,0 +1,89 @@
+load("@rules_java//java:defs.bzl", "java_binary", "java_library")
+load("@rules_img//img:image.bzl", "image_manifest")
+load("@rules_img//img:push.bzl", "image_push")
+load("@fsmanifestinfo//fsmanifest:defs.bzl", "fsmanifest_remap")
+
+# Library for JSON processing using Gson (third-party dependency)
+java_library(
+    name = "json_lib",
+    srcs = ["JsonProcessor.java"],
+    deps = [
+        "@maven//:com_google_code_gson_gson",
+    ],
+)
+
+# Utility library using Guava (third-party dependency)
+java_library(
+    name = "utils_lib",
+    srcs = ["StringUtils.java"],
+    deps = [
+        "@maven//:com_google_guava_guava",
+    ],
+)
+
+# Main application binary with real third-party dependencies
+# Demonstrates:
+# - Multiple java_library dependencies
+# - External Maven dependencies (Guava, Gson, SLF4J, Commons CLI)
+# - Data files (config and resources)
+# - Proper layer separation (runtime/third_party/app)
+java_binary(
+    name = "application",
+    srcs = ["Application.java"],
+    main_class = "examples.java.Application",
+    data = [
+        "config/app.config",
+        "resources/README.txt",
+    ],
+    deps = [
+        ":json_lib",
+        ":utils_lib",
+        "@maven//:com_google_guava_guava",
+        "@maven//:commons_cli_commons_cli",
+        "@maven//:org_slf4j_slf4j_api",
+    ],
+    runtime_deps = [
+        "@maven//:org_slf4j_slf4j_simple",
+    ],
+)
+
+# Remap application paths to predictable container locations
+fsmanifest_remap(
+    name = "application_remapped",
+    manifests = [":application"],
+    strip_prefix = "auto",  # Remove bazel-out/k8-fastbuild/bin/
+    add_prefix = "/app",    # Add /app prefix for predictable paths
+)
+
+# Container image with FSManifestInfo demonstrating layer separation
+# Runtime layer: JVM from base image
+# Third-party layer: Maven dependencies (Guava, Gson, SLF4J, etc.)
+# Application layer: Application code, config, and resources
+image_manifest(
+    name = "application_image",
+    base = "@distroless_java",  # Distroless Java base image with JVM
+    layers = [
+        ":application_remapped",  # FSManifestInfo expands to categorized layers
+    ],
+    # Layer order: third-party deps, then app code (jdk is excluded as it comes from base)
+    # This follows rules_docker's approach: jar_dep_layer → jar_app_layer
+    fsmanifest_layer_order = ["third_party", "app"],  # "jdk" category is auto-excluded
+    entrypoint = [
+        "/usr/bin/java",
+        "-cp",
+        "/app/*:/app/lib/*",  # Include all JARs in /app and /app/lib
+        "examples.java.Application",
+    ],
+    env = {
+        "APP_ENV": "container",
+    },
+)
+
+# Push target for deploying to registry
+image_push(
+    name = "push",
+    image = ":application_image",
+    registry = "ghcr.io",
+    repository = "malt3/fsmanifest-java-demo",
+    tag = "latest",
+)

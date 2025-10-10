@@ -1,0 +1,9 @@
+[submodule "submodules/rules_img"]
+	path = submodules/rules_img
+	url = https://github.com/bazel-contrib/rules_img
+[submodule "submodules/rules_java"]
+	path = submodules/rules_java
+	url = https://github.com/bazelbuild/rules_java
+[submodule "submodules/rules_docker"]
+	path = submodules/rules_docker
+	url = https://github.com/bazelbuild/rules_docker

@@ -1,0 +1,12 @@
+"""
+This module provides the FSManifestInfo provider for describing
+file placement in archives, container images, and other deployment targets.
+"""
+
+module(
+    name = "fsmanifestinfo",
+    version = "0.0.1",
+)
+
+# Bazel Skylib for bzl_library rules
+bazel_dep(name = "bazel_skylib", version = "1.5.0")

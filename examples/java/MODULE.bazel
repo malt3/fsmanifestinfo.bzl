@@ -1,0 +1,73 @@
+module(name = "java_example")
+
+# Define fsmanifestinfo as a local module
+bazel_dep(name = "fsmanifestinfo", version = "0.1.0")
+local_path_override(
+    module_name = "fsmanifestinfo",
+    path = "../..",
+)
+
+# Java toolchain - use local modified version
+bazel_dep(name = "rules_java", version = "8.16.1")
+local_path_override(
+    module_name = "rules_java",
+    path = "../../submodules/rules_java",
+)
+
+# Image rules - use local modified version
+bazel_dep(name = "rules_img")
+local_path_override(
+    module_name = "rules_img",
+    path = "../../submodules/rules_img",
+)
+
+bazel_dep(name = "rules_img_pull_tool")
+local_path_override(
+    module_name = "rules_img_pull_tool",
+    path = "../../submodules/rules_img/pull_tool",
+)
+
+bazel_dep(name = "rules_img_tool")
+local_path_override(
+    module_name = "rules_img_tool",
+    path = "../../submodules/rules_img/img_tool",
+)
+
+register_toolchains("@rules_img_tool//toolchain:all")
+# Platform definitions
+bazel_dep(name = "platforms", version = "0.0.8")
+
+# Skylib for bzl_library
+bazel_dep(name = "bazel_skylib", version = "1.5.0")
+
+# rules_jvm_external for managing third-party Java dependencies
+bazel_dep(name = "rules_jvm_external", version = "6.8")
+
+maven = use_extension("@rules_jvm_external//:extensions.bzl", "maven")
+maven.install(
+    artifacts = [
+        "com.google.guava:guava:32.0.1-jre",
+        "com.google.code.gson:gson:2.8.9",
+        "org.slf4j:slf4j-api:2.0.9",
+        "org.slf4j:slf4j-simple:2.0.9",
+        "commons-cli:commons-cli:1.6.0",
+    ],
+    repositories = [
+        "https://repo1.maven.org/maven2",
+    ],
+    lock_file = "//:maven_install.json",
+)
+use_repo(maven, "maven")
+
+# Pull distroless Java base image for running Java applications
+pull = use_repo_rule("@rules_img//img:pull.bzl", "pull")
+
+# Distroless Java 21 image from Google
+# This provides a minimal runtime with JVM but no shell or package manager
+pull(
+    name = "distroless_java",
+    digest = "sha256:418b2e2a9e452aa9299511427f2ae404dfc910ecfa78feb53b1c60c22c3b640c",
+    registry = "gcr.io",
+    repository = "distroless/java21",
+    tag = "latest",
+)

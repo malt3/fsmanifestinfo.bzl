@@ -18,6 +18,8 @@ from runfiles import Runfiles
 from json_processor import JsonProcessor
 from string_utils import StringUtils
 
+from foobar.baz import BAZ_CONSTANT  # Example of local package import
+
 
 class Application:
     """Python application demonstrating FSManifestInfo with various dependencies."""
@@ -29,6 +31,7 @@ class Application:
         self.runfiles = Runfiles.Create()
         self.config = self._load_config()
         self.readme = self._load_readme()
+        print(f"Loaded BAZ_CONSTANT: {BAZ_CONSTANT}")
 
     def _load_config(self) -> str:
         """Load configuration from data file using bazel-runfiles."""

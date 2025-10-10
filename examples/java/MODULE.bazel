@@ -1,9 +1,9 @@
 module(name = "java_example")
 
 # Define fsmanifestinfo as a local module
-bazel_dep(name = "fsmanifestinfo", version = "0.1.0")
+bazel_dep(name = "fsmanifestinfo.bzl", version = "0.1.0")
 local_path_override(
-    module_name = "fsmanifestinfo",
+    module_name = "fsmanifestinfo.bzl",
     path = "../..",
 )
 

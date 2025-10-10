@@ -1,6 +1,5 @@
 load("@rules_java//java:defs.bzl", "JavaInfo")
-load("@fsmanifestinfo//fsmanifest:fsmanifestinfo.bzl", "fsmanifest")
-load("@fsmanifestinfo//fsmanifest:defs.bzl", "CATEGORY_FIRST_PARTY", "CATEGORY_OTHER_PARTY")
+load("@fsmanifestinfo.bzl", "fsmanifest", "CATEGORY_FIRST_PARTY", "CATEGORY_OTHER_PARTY")
 
 # Provider to carry collected runfiles through the aspect
 RunfilesInfo = provider(

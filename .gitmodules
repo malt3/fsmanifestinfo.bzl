@@ -7,3 +7,6 @@
 [submodule "submodules/rules_docker"]
 	path = submodules/rules_docker
 	url = https://github.com/bazelbuild/rules_docker
+[submodule "submodules/rules_python"]
+	path = submodules/rules_python
+	url = https://github.com/bazel-contrib/rules_python

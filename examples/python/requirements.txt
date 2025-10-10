@@ -1,0 +1,5 @@
+click==8.1.7
+flask==3.0.3
+requests==2.31.0
+pyyaml==6.0.1
+bazel-runfiles==0.35.0

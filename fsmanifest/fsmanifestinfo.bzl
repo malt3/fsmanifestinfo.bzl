@@ -1,4 +1,9 @@
-"""FSManifestInfo provider for describing file placement in archives and container images."""
+"""FSManifestInfo provider for describing file placement in archives, container images, or other deployment targets."""
+
+# Well-known categories
+CATEGORY_PLATFORM = "platform"       # Language runtime, interpreter, standard library
+CATEGORY_OTHER_PARTY = "external"    # Third-party/external dependencies
+CATEGORY_FIRST_PARTY = "application" # First-party application code
 
 # FSManifestInfo is a provider that describes how files should be placed
 # in deliverables like container images, archives, or deployment targets.
@@ -9,76 +14,125 @@ FSManifestInfo = provider(
     are mapped to file entries containing source files and metadata.
     """,
     fields = {
-        "entries": "Dictionary mapping destination paths (string) to entry structs",
+        "entries": "Dictionary mapping destination paths (string) to entry structs with (kind, category, target)",
+        "metadata": "Dictionary mapping destination paths (string) to metadata structs (mode, uid, gid, etc)",
         "defaults": "Optional struct with default values for metadata",
-        "labels": "Optional dictionary of string labels for this manifest",
     },
 )
 
-def _make_entry(
-        src,
+def _make_file(src, category):
+    """Create a file entry for FSManifest.
+
+    Args:
+        src: Source File object (required)
+        category: Category - well-known category or custom string
+
+    Returns:
+        Struct with (kind, category, target) for a file entry
+    """
+    if not src:
+        fail("make_file requires a src File object")
+
+    return struct(
         kind = "file",
-        category = "app",
+        category = category,
+        target = src,
+    )
+
+def _make_symlink(symlink_target, category):
+    """Create a symlink entry for FSManifest.
+
+    Args:
+        symlink_target: Target path for the symlink (required)
+        category: Category - well-known category or custom string
+
+    Returns:
+        Struct with (kind, category, target) for a symlink entry
+    """
+    if not symlink_target:
+        fail("make_symlink requires a symlink_target")
+
+    return struct(
+        kind = "symlink",
+        category = category,
+        target = symlink_target,
+    )
+
+def _make_empty_dir(category):
+    """Create an empty directory entry for FSManifest.
+
+    Args:
+        category: Category - well-known category or custom string
+
+    Returns:
+        Struct with (kind, category, target) for an empty directory entry
+    """
+    return struct(
+        kind = "empty_dir",
+        category = category,
+        target = None,
+    )
+
+def _make_metadata(
         mode = None,
         uid = None,
         gid = None,
         owner = None,
         group = None,
         mtime = None,
-        xattrs = None,
-        symlink_target = None):
-    """Create an FSManifest entry.
+        xattrs = None):
+    """Create metadata for a manifest entry.
 
     Args:
-        src: Source File object or None for special entries
-        kind: Entry kind - "file", "dir", "symlink", or "empty_dir"
-        category: Category for layering - "runtime", "third_party", or "app"
-        mode: Unix file mode (e.g., "0755")
+        mode: Unix file mode (e.g., "0755" for executables/directories, "0644" for regular files)
         uid: User ID (integer)
         gid: Group ID (integer)
         owner: Owner name (string)
         group: Group name (string)
         mtime: Modification time (integer timestamp)
         xattrs: Dictionary of extended attributes
-        symlink_target: Target path for symlinks
 
     Returns:
-        Struct representing a manifest entry
+        Struct with metadata fields (only non-None values included)
     """
-    return struct(
-        src = src,
-        kind = kind,
-        category = category,
-        mode = mode,
-        uid = uid,
-        gid = gid,
-        owner = owner,
-        group = group,
-        mtime = mtime,
-        xattrs = xattrs or {},
-        symlink_target = symlink_target,
-    )
+    md = {}
+    if mode != None:
+        md["mode"] = mode
+    if uid != None:
+        md["uid"] = uid
+    if gid != None:
+        md["gid"] = gid
+    if owner != None:
+        md["owner"] = owner
+    if group != None:
+        md["group"] = group
+    if mtime != None:
+        md["mtime"] = mtime
+    if xattrs != None:
+        md["xattrs"] = xattrs
+    return struct(**md) if md else None
 
 def _validate_entry(entry, path):
     """Validate a manifest entry.
 
     Args:
-        entry: Entry struct to validate
+        entry: Entry struct to validate (with kind, category, target)
         path: Destination path for error messages
     """
-    if entry.kind not in ["file", "dir", "symlink", "empty_dir"]:
+    # Valid kinds are: file (includes directories with File.is_directory), symlink, empty_dir
+    if entry.kind not in ["file", "symlink", "empty_dir"]:
         fail("Invalid entry kind '{}' for path '{}'".format(entry.kind, path))
 
-    if entry.category not in ["runtime", "third_party", "app"]:
-        fail("Invalid category '{}' for path '{}'. Must be 'runtime', 'third_party', or 'app'".format(
-            entry.category, path))
-
-    if entry.kind == "symlink" and not entry.symlink_target:
-        fail("Symlink at '{}' must have symlink_target".format(path))
-
-    if entry.kind in ["file", "dir"] and not entry.src:
-        if entry.kind != "empty_dir":
-            fail("{} at '{}' must have src".format(entry.kind.capitalize(), path))
+    # Validate based on kind
+    if entry.kind == "file":
+        if not entry.target or type(entry.target) != "File":
+            fail("File at '{}' must have a File object as target".format(path))
+    elif entry.kind == "symlink":
+        if not entry.target or type(entry.target) != "string":
+            fail("Symlink at '{}' must have a string target path".format(path))
+    elif entry.kind == "empty_dir":
+        if entry.target != None:
+            fail("Empty directory at '{}' should have None as target".format(path))
 
 def _merge_entries(entries1, entries2, allow_duplicates = False):
     """Merge two entry dictionaries.
@@ -100,13 +154,13 @@ def _merge_entries(entries1, entries2, allow_duplicates = False):
 
     return result
 
-def _create_manifest(entries, defaults = None, labels = None):
+def _create_manifest(entries, metadata = None, defaults = None):
     """Create an FSManifestInfo provider.
 
     Args:
-        entries: Dictionary mapping paths to entry structs
+        entries: Dictionary mapping paths to entry structs (kind, category, target)
+        metadata: Optional dictionary mapping paths to metadata structs
         defaults: Optional struct with default metadata values
-        labels: Optional dictionary of labels
 
     Returns:
         FSManifestInfo provider
@@ -117,8 +171,8 @@ def _create_manifest(entries, defaults = None, labels = None):
 
     return FSManifestInfo(
         entries = entries,
+        metadata = metadata or {},
         defaults = defaults,
-        labels = labels or {},
     )
 
 def _merge_manifests(manifests, allow_duplicates = False):
@@ -132,22 +186,30 @@ def _merge_manifests(manifests, allow_duplicates = False):
         Merged FSManifestInfo provider
     """
     merged_entries = {}
-    merged_labels = {}
+    merged_metadata = {}
 
     for manifest in manifests:
         merged_entries = _merge_entries(merged_entries, manifest.entries, allow_duplicates)
-        # Merge labels, later manifests override
-        for key, value in manifest.labels.items():
-            merged_labels[key] = value
+
+        # Merge metadata dicts
+        for path, md in manifest.metadata.items():
+            if path in merged_metadata and not allow_duplicates:
+                fail("Duplicate metadata for path '{}' in manifest merge".format(path))
+            merged_metadata[path] = md
+
+    last_defaults = None
+    for manifest in manifests:
+        if manifest.defaults != None:
+            last_defaults = manifest.defaults
 
     return FSManifestInfo(
         entries = merged_entries,
-        defaults = None,  # Don't merge defaults
-        labels = merged_labels,
+        metadata = merged_metadata,
+        defaults = last_defaults,
     )
 
-def _categorize_by_layer(manifest):
-    """Split manifest entries by category for layering.
+def _categorize(manifest):
+    """Split manifest entries by category.
 
     Args:
         manifest: FSManifestInfo provider
@@ -155,24 +217,27 @@ def _categorize_by_layer(manifest):
     Returns:
         Dictionary mapping category names to dictionaries of entries
     """
-    layers = {
-        "runtime": {},
-        "third_party": {},
-        "app": {},
-    }
+    categories = {}
 
     for path, entry in manifest.entries.items():
-        layers[entry.category][path] = entry
+        if entry.category in categories:
+            categories[entry.category][path] = entry
+        else:
+            categories[entry.category] = {path: entry}
 
-    return layers
+    return categories
 
-# Export public API
 fsmanifest = struct(
     FSManifestInfo = FSManifestInfo,
-    make_entry = _make_entry,
-    validate_entry = _validate_entry,
+    CATEGORY_PLATFORM = CATEGORY_PLATFORM,
+    CATEGORY_OTHER_PARTY = CATEGORY_OTHER_PARTY,
+    CATEGORY_FIRST_PARTY = CATEGORY_FIRST_PARTY,
+    make_file = _make_file,
+    make_symlink = _make_symlink,
+    make_empty_dir = _make_empty_dir,
+    make_metadata = _make_metadata,
     create_manifest = _create_manifest,
     merge_manifests = _merge_manifests,
     merge_entries = _merge_entries,
-    categorize_by_layer = _categorize_by_layer,
+    categorize = _categorize,
 )

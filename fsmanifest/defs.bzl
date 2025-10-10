@@ -3,8 +3,11 @@
 load(":fsmanifestinfo.bzl", "fsmanifest")
 load(":remap.bzl", _fsmanifest_remap = "fsmanifest_remap")
 
-# Re-export the provider
+# Re-export the provider and constants
 FSManifestInfo = fsmanifest.FSManifestInfo
+CATEGORY_PLATFORM = fsmanifest.CATEGORY_PLATFORM
+CATEGORY_OTHER_PARTY = fsmanifest.CATEGORY_OTHER_PARTY
+CATEGORY_FIRST_PARTY = fsmanifest.CATEGORY_FIRST_PARTY
 
 # Re-export the remap rule
 fsmanifest_remap = _fsmanifest_remap
@@ -12,7 +15,7 @@ fsmanifest_remap = _fsmanifest_remap
 def manifest_from_files(
         files,
         prefix = "",
-        category = "app",
+        category = CATEGORY_FIRST_PARTY,
         strip_prefix = None,
         mode = None,
         uid = None,
@@ -22,7 +25,7 @@ def manifest_from_files(
     Args:
         files: List or depset of File objects
         prefix: Path prefix to add to all entries
-        category: Category for all files ("runtime", "third_party", or "app")
+        category: Category for all files (CATEGORY_PLATFORM, CATEGORY_OTHER_PARTY, or CATEGORY_FIRST_PARTY)
         strip_prefix: Optional prefix to remove from file paths
         mode: Default Unix mode for files
         uid: Default user ID
@@ -32,6 +35,7 @@ def manifest_from_files(
         FSManifestInfo provider
     """
     entries = {}
+    metadata = {}
 
     # Convert to list if it's a depset
     file_list = files.to_list() if hasattr(files, "to_list") else files
@@ -48,22 +52,27 @@ def manifest_from_files(
         if not path.startswith("/"):
             path = "/" + path
 
-        entries[path] = fsmanifest.make_entry(
+        # Create entry with just kind, category, target
+        entries[path] = fsmanifest.make_file(
             src = f,
-            kind = "dir" if f.is_directory else "file",
             category = category,
-            mode = mode,
-            uid = uid,
-            gid = gid,
         )
 
-    return fsmanifest.create_manifest(entries)
+        # Create metadata if any values provided
+        if mode or uid != None or gid != None:
+            metadata[path] = fsmanifest.make_metadata(
+                mode = mode,
+                uid = uid,
+                gid = gid,
+            )
+
+    return fsmanifest.create_manifest(entries, metadata)
 
 def manifest_from_runfiles(
         runfiles,
         prefix = "/app",
         categorize_fn = None,
-        default_category = "app",
+        default_category = CATEGORY_FIRST_PARTY,
         mode = None):
     """Create a manifest from runfiles.
 
@@ -78,6 +87,7 @@ def manifest_from_runfiles(
         FSManifestInfo provider
     """
     entries = {}
+    metadata = {}
 
     # Process runfiles
     for f in runfiles.files.to_list():
@@ -96,12 +106,14 @@ def manifest_from_runfiles(
         if not dest_path.startswith("/"):
             dest_path = "/" + dest_path
 
-        entries[dest_path] = fsmanifest.make_entry(
+        entries[dest_path] = fsmanifest.make_file(
             src = f,
-            kind = "file",
             category = category,
-            mode = mode,
         )
+
+        # Add metadata if mode provided
+        if mode:
+            metadata[dest_path] = fsmanifest.make_metadata(mode = mode)
 
     # Add symlinks from runfiles
     for symlink in runfiles.symlinks.to_list():
@@ -109,14 +121,12 @@ def manifest_from_runfiles(
         if not dest_path.startswith("/"):
             dest_path = "/" + dest_path
 
-        entries[dest_path] = fsmanifest.make_entry(
-            src = None,
-            kind = "symlink",
-            category = default_category,
+        entries[dest_path] = fsmanifest.make_symlink(
             symlink_target = symlink.target_file.path if symlink.target_file else symlink.target_path,
+            category = default_category,
         )
 
-    return fsmanifest.create_manifest(entries)
+    return fsmanifest.create_manifest(entries, metadata)
 
 def categorize_by_repository(file):
     """Categorization function that separates files by repository.
@@ -125,15 +135,15 @@ def categorize_by_repository(file):
         file: File object
 
     Returns:
-        "third_party" for external repository files, None otherwise
+        CATEGORY_OTHER_PARTY for external repository files, None otherwise
     """
     # Check if it's from an external repository
     if file.owner and file.owner.workspace_name and file.owner.workspace_name != "":
-        return "third_party"
+        return CATEGORY_OTHER_PARTY
 
     # Also check path heuristics
     if file.short_path.startswith("external/"):
-        return "third_party"
+        return CATEGORY_OTHER_PARTY
 
     return None
 
@@ -158,14 +168,20 @@ def split_by_category(manifest):
     Returns:
         Dictionary mapping category to FSManifestInfo provider
     """
-    layers = fsmanifest.categorize_by_layer(manifest)
+    categories = fsmanifest.categorize(manifest)
     result = {}
 
-    for category, entries in layers.items():
+    for category, entries in categories.items():
         if entries:  # Only create manifest if there are entries
+            # Extract metadata for the entries in this category
+            category_metadata = {}
+            for path in entries:
+                if path in manifest.metadata:
+                    category_metadata[path] = manifest.metadata[path]
+
             result[category] = fsmanifest.create_manifest(
                 entries = entries,
-                labels = {"layer": category},
+                metadata = category_metadata,
             )
 
     return result

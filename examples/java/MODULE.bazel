@@ -21,19 +21,6 @@ local_path_override(
     path = "../../submodules/rules_img",
 )
 
-bazel_dep(name = "rules_img_pull_tool")
-local_path_override(
-    module_name = "rules_img_pull_tool",
-    path = "../../submodules/rules_img/pull_tool",
-)
-
-bazel_dep(name = "rules_img_tool")
-local_path_override(
-    module_name = "rules_img_tool",
-    path = "../../submodules/rules_img/img_tool",
-)
-
-register_toolchains("@rules_img_tool//toolchain:all")
 # Platform definitions
 bazel_dep(name = "platforms", version = "0.0.8")
 

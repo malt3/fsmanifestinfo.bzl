@@ -1,6 +1,7 @@
 package examples.java;
 
 import com.google.common.io.Resources;
+import com.google.devtools.build.runfiles.Runfiles;
 import org.apache.commons.cli.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -25,27 +26,11 @@ public class Application {
     public Application() throws IOException {
         this.jsonProcessor = new JsonProcessor();
 
-        // Try to load config from data dependency
-        try {
-            // Try container path first
-            this.configContent = Files.readString(
-                Paths.get("/app/config/app.config"),
-                StandardCharsets.UTF_8
-            );
-            logger.info("Loaded config from container path");
-        } catch (IOException e) {
-            try {
-                // Fallback to build path
-                this.configContent = Files.readString(
-                    Paths.get("examples/java/config/app.config"),
-                    StandardCharsets.UTF_8
-                );
-                logger.info("Loaded config from build path");
-            } catch (IOException e2) {
-                this.configContent = "# Default config\nversion=1.0.0\nenvironment=default";
-                logger.info("Using default config");
-            }
-        }
+        // Load config using Bazel runfiles library
+        Runfiles runfiles = Runfiles.create();
+        String configPath = runfiles.rlocation("_main/config/app.config");
+        this.configContent = Files.readString(Paths.get(configPath), StandardCharsets.UTF_8);
+        logger.info("Loaded config from Bazel runfiles");
     }
 
     public void run(String[] args) {
@@ -88,9 +73,9 @@ public class Application {
                 System.out.println();
                 System.out.println("This demonstrates:");
                 System.out.println("- Java libraries (json_lib, utils_lib)");
-                System.out.println("- Third-party deps (Guava, Gson, SLF4J, Commons CLI)");
+                System.out.println("- External deps (Guava, Gson, SLF4J, Commons CLI)");
                 System.out.println("- Data dependencies (config files)");
-                System.out.println("- Layer separation (runtime/third_party/app)");
+                System.out.println("- Layer separation (platform/external/application)");
             }
 
         } catch (ParseException e) {
